@@ -2,17 +2,40 @@ import express from "express"
 import blogPostModel from "./schema.js"
 import CommentModel from "../comments/schema.js"
 import createHttpError from "http-errors"
+import q2m from "query-to-mongo"
 
 const blogPostsRouter = express.Router()
 
-blogPostsRouter.get("/", async (req,res,next)=>{
-    try {
-        const blogPosts = await blogPostModel.find({})
-        res.send(blogPosts)
-    } catch (error) {
-        next(error)
-    }
-})
+// blogPostsRouter.get("/", async (req,res,next)=>{
+//     try {
+//         const blogPosts = await blogPostModel.find({})
+//         res.send(blogPosts)
+//     } catch (error) {
+//         next(error)
+//     }
+// })
+
+blogPostsRouter.get('/', async (req, res, next) => {
+	try {
+		const mongoQuery = q2m(req.query);
+		const total = await blogPostModel.countDocuments(mongoQuery.criteria);
+		const blogs = await blogPostModel.find(
+			mongoQuery.criteria,
+			mongoQuery.options.fields,
+		)
+			.limit(mongoQuery.options.limit || 10)
+			.skip(mongoQuery.options.skip)
+			.sort(mongoQuery.options.sort);
+		res.send({
+			links: mongoQuery.links('/blogs', total),
+			total,
+			pageTotal: Math.ceil(total / mongoQuery.options.limit),
+			blogs,
+		});
+	} catch (error) {
+		next(error);
+	}
+});
 
 blogPostsRouter.get("/:blogPostId", async (req,res,next)=>{
     try {
@@ -85,7 +108,7 @@ blogPostsRouter.post("/:blogPostId/comments", async (req, res, next) => {
 			);
 			res.status(201).send(updatedPost);
 		} else {
-			next(createHttpError(404, `blog with id ${req.params.blogPostId} not found!`),);
+			next(createHttpError(404, `blog with id ${paramsID} not found!`),);
 		}
 	} catch (error) {
 		next(error);
@@ -94,11 +117,12 @@ blogPostsRouter.post("/:blogPostId/comments", async (req, res, next) => {
   
   blogPostsRouter.get("/:blogPostId/comments", async (req, res, next) => {
     try {
-        const blogPost = await blogPostModel.findById(req.params.blogPostId)
+        const paramsID = req.params.blogPostId
+        const blogPost = await blogPostModel.findById(paramsID)
         if (blogPost) {
           res.send(blogPost.comments)
         } else {
-          next(`BlogPost with id ${req.params.blogPostId} not found!`)
+          next(`BlogPost with id ${paramsID} not found!`)
         }
     } catch (error) {
       next(error)
@@ -107,7 +131,8 @@ blogPostsRouter.post("/:blogPostId/comments", async (req, res, next) => {
   
   blogPostsRouter.get("/:blogPostId/comments/:commentId", async (req, res, next) => {
     try {
-        const blogPost = await blogPostModel.findById(req.params.blogPostId)
+        const paramsID = req.params.blogPostId
+        const blogPost = await blogPostModel.findById(paramsID)
         if (blogPost) {
             const comment = blogPost.comments.find(c => c._id.toString() === req.params.commentId)
             if (comment) {
@@ -116,7 +141,7 @@ blogPostsRouter.post("/:blogPostId/comments", async (req, res, next) => {
                 next(`Comment with id ${req.params.commentId} not found in comments!`)
               }
             } else {
-              next(`BlogPost with id ${req.params.blogPostId} not found!`)
+              next(`BlogPost with id ${paramsID} not found!`)
             }
     } catch (error) {
       next(error)
@@ -125,7 +150,8 @@ blogPostsRouter.post("/:blogPostId/comments", async (req, res, next) => {
   
   blogPostsRouter.put("/:blogPostId/comment/:commentId", async (req, res, next) => {
 try {
-    const post =await blogPostModel.findById(req.params.blogPostId)
+    const paramsID = req.params.blogPostId
+    const post =await blogPostModel.findById(paramsID)
      if(post){
             const index=post.comments.findIndex(c=>c._id.toString()===req.params.commentId)
             if(index!==-1){
@@ -136,7 +162,7 @@ try {
                 next(createHttpError(404, `Comment with id${req.params.commentId} not found!`))
             }
         }else{
-            next(createHttpError(404, `BlogPost with id${req.params.blogPostId} not found!`))
+            next(createHttpError(404, `BlogPost with id${paramsID} not found!`))
         }
     } catch (error) {
      next(error)
@@ -160,14 +186,15 @@ try {
   
   blogPostsRouter.delete("/:blogPostId/comment/:commentId", async (req, res, next) => {
     try {
+        const paramsID = req.params.blogPostId
         const blogPost = await blogPostModel.findByIdAndUpdate(
-        req.params.blogPostId, 
+        paramsID, 
         {$pull: {comments: { _id: req.params.commentId },},},
         { new: true,})
           if (blogPost) {
-            res.send(blogPost)
+            res.status(204).send(blogPost)
           } else {
-            next(`BlogPost with id ${req.params.blogPostId} not found!`)
+            next(`BlogPost with id ${paramsID} not found!`)
           }
     } catch (error) {
       next(error)
